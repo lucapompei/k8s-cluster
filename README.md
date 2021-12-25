@@ -14,7 +14,7 @@ Each folder contains the information necessary to make the various configuration
 ## Observability example
 
 - Kong official dashboard
-![Kong official dashboard](https://github.com/lucapompei/k8s-cluster/tree/master/examples/kong.png)
+![Kong official dashboard](https://raw.githubusercontent.com/lucapompei/k8s-cluster/master/examples/kong.png)
 
 - Prometheus stats
-![Prometheus stats](https://github.com/lucapompei/k8s-cluster/tree/master/examples/prometheus.png)
+![Prometheus stats](https://raw.githubusercontent.com/lucapompei/k8s-cluster/master/examples/prometheus.png)
