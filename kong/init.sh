@@ -2,7 +2,7 @@
 
 # Add repository
 helm repo add kong https://charts.konghq.com
-helm update
+helm repo update
 
 # Create namespace
 kubectl create namespace kong

@@ -2,7 +2,7 @@
 
 # Add repository
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm update
+helm repo update
 
 # Create namespace
 kubectl create namespace monitoring
