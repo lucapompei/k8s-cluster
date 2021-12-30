@@ -1,11 +1,12 @@
 # Introduction
 
-The folder allows you to configure a dedicated namespace dedicated for monitoring and observability through the _Prometheus_ and _Grafana_ stack.
+The folder allows you to configure a dedicated namespace dedicated for monitoring and observability through the _Prometheus_, _Grafana_, _Loki_ and _Promtail_ stack.
 
 ## Dependencies
 
 The configuration is based on:
 - prometheus-community/kube-prometheus-stack: v.25.1.0
+- grafana/loki-stack: v.2.5.0
 
 ## First startup
 

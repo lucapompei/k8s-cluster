@@ -9,7 +9,7 @@ These can be tested on any Kubernetes engine or implementation, such as Minikube
 Each folder contains the information necessary to make the various configurations, such as those relating to:
 
 - [Kong](https://github.com/lucapompei/k8s-cluster/tree/master/kong)
-- [Prometheus + Grafana stack](https://github.com/lucapompei/k8s-cluster/tree/master/monitoring)
+- [Prometheus + Grafana + Loki + Promtail stack](https://github.com/lucapompei/k8s-cluster/tree/master/monitoring)
 - [Swagger aggregator](https://github.com/lucapompei/k8s-cluster/tree/master/swagger-aggregator)
 
 ## Observability example
@@ -17,3 +17,5 @@ Each folder contains the information necessary to make the various configuration
 ![Kong official dashboard](https://raw.githubusercontent.com/lucapompei/k8s-cluster/master/examples/kong.png "Kong official dashboard")
 
 ![Prometheus stats](https://raw.githubusercontent.com/lucapompei/k8s-cluster/master/examples/prometheus.png "Prometheus stats")
+
+![Loki](https://raw.githubusercontent.com/lucapompei/k8s-cluster/master/examples/loki.png "Loki")
