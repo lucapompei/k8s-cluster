@@ -10,6 +10,7 @@ Each folder contains the information necessary to make the various configuration
 
 - [Kong](https://github.com/lucapompei/k8s-cluster/tree/master/kong)
 - [Prometheus + Grafana stack](https://github.com/lucapompei/k8s-cluster/tree/master/monitoring)
+- [Swagger aggregator](https://github.com/lucapompei/k8s-cluster/tree/master/swagger-aggregator)
 
 ## Observability example
 
