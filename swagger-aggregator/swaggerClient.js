@@ -3,9 +3,9 @@ const k8s = require('@kubernetes/client-node');
 const request = require('request');
 
 // Define contants
-const route = process.env.route != null ? process.env.route : '';
-const namespace = process.env.namespace != null ? process.env.namespace : 'default';
-const exclusions = ['kubernetes', 'swagger-aggregator'];
+const getRoute = () => process.env.route != null ? process.env.route : '';
+const getNamespace = () => process.env.namespace != null ? process.env.namespace : 'default';
+const getExclusions = () => process.env.exclusions != null ? process.env.exclusions.split(',') : [];
 
 // Configure client
 const kc = new k8s.KubeConfig();
@@ -15,7 +15,7 @@ const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 // Get services inside the given namespace
 function getServices() {
     return new Promise((resolve, reject) => {
-        k8sApi.listNamespacedService(namespace)
+        k8sApi.listNamespacedService(getNamespace())
             .then(res => {
                 const services = res.body.items.map(item => item?.metadata?.name);
                 console.log(`Retrieved list of services from K8S: ${services}`);
@@ -57,6 +57,8 @@ async function buildSwaggerOptions() {
         }
     };
     const services = await getServices();
+    const route = getRoute();
+    const exclusions = getExclusions();
     for (service of services) {
         if (!exclusions.includes(service)) {
             options.swaggerOptions.urls.push({
