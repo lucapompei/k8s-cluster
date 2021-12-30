@@ -1,0 +1,138 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: service-reader-role
+rules:
+- apiGroups: [""] 
+  resources: ["services"]
+  verbs: ["list"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-reader-account
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: service-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: service-reader-role
+subjects:
+- kind: ServiceAccount
+  name: service-reader-account
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: swagger-aggregator
+data:
+  namespace: 'default'
+  route: '/swagger-aggregator'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swagger-aggregator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: swagger-aggregator
+  template:
+    metadata:
+      labels:
+        app: swagger-aggregator
+    spec:
+      serviceAccountName: service-reader-account
+      containers:
+        - name: swagger-aggregator
+          imagePullPolicy: IfNotPresent
+          image: swagger-aggregator:latest
+          envFrom:
+            - configMapRef:
+                name: swagger-aggregator
+          resources:
+            limits:
+              memory: 200Mi
+              cpu: 1
+            requests:
+              memory: 50Mi
+              cpu: 0.2
+          ports:
+            - containerPort: 3000
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            timeoutSeconds: 2
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            timeoutSeconds: 2
+            periodSeconds: 10
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: swagger-aggregator
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    app: swagger-aggregator
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: swagger-aggregator
+config: 
+  response_code:
+  - 200
+  request_method:
+  - GET
+  - HEAD
+  content_type:
+  - text/plain
+  - application/json
+  cache_ttl: 300
+  strategy: memory
+plugin: proxy-cache
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: swagger-aggregator
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: swagger-aggregator
+spec:
+  ingressClassName: kong
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /swagger-aggregator
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: swagger-aggregator
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - localhost
+      secretName: swagger-aggregator
