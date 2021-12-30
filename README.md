@@ -1,6 +1,6 @@
 # Introduction
 
-This repository is a container of various utilities for managing a Kubernetes cluster.
+This repository is a container of various utilities for managing a Kubernetes cluster, such as API Gateway management, monitoring and observability, log aggregation, swagger aggregation and more.
 
 These can be tested on any Kubernetes engine or implementation, such as Minikube, GKE, AKS or EKS and more.
 
