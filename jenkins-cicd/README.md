@@ -4,21 +4,21 @@ The folder contains a customized Jenkinsfile to use to build and deploy a generi
 
 ## Parameters
 
-// Base data
+Base data
 - projectName: The project name
 - gitUrl: The project git url
 - gitBranch: The project git branch to use to run CI/CD
 - gitTag: The project git tag to use to run CI/CD
 
-// Build data
+Build data
 - jdkVersion (default: OpenJDK-11): The JDK to use to build the project
 
-// Kubernetes data
+Kubernetes data
 - toKubernetes (default: false): Indicates whether the deployment is directed to Kubernetes
 - kubernetesCredentials: The Kubernetes credentials ID stored in Jenkins
 - kubernetesCluster: The Kubernetes cluster name in which to deploy
 
-// Mattermost data
+Mattermost data
 - toMattermost (default: false): Indicates whether the deployment is directed to Kubernetes
 - mattermostChannel: The Mattermost channel ID in which to send the notification
 - mattermostUrlWebHook: The Mattermost webhook to use to send the notification
