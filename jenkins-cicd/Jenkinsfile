@@ -1,0 +1,201 @@
+pipeline {
+
+  // Incoming data
+  parameters {
+
+    // Base data
+    string(name: 'projectName', description: 'The project name')
+    string(name: 'gitUrl', description: 'The project git url')
+    string(name: 'gitBranch', description: 'The project git branch to use to run CI/CD')
+    string(name: 'gitTag', description: 'The project git tag to use to run CI/CD')
+
+    // Build data
+    string(name: 'jdkVersion', defaultValue: 'OpenJDK-11', description: 'The JDK to use to build the project')
+
+    // Kubernetes data
+    booleanParam(name: 'toKubernetes', defaultValue: false, description: 'Indicates whether the deployment is directed to Kubernetes')
+    string(name: 'kubernetesCredentials', description: 'The Kubernetes credentials ID stored in Jenkins')
+    string(name: 'kubernetesCluster', description: 'The Kubernetes cluster name in which to deploy')
+
+    // Mattermost data
+    booleanParam(name: 'toMattermost', defaultValue: false, description: 'Indicates whether the deployment is directed to Kubernetes')
+    string(name: 'mattermostChannel', description: 'The Mattermost channel ID in which to send the notification')
+    string(name: 'mattermostUrlWebHook', description: 'The Mattermost webhook to use to send the notification')
+
+  }
+
+  environment {
+
+    // Gitlab properties
+    gitlabCredentialsId = 'gitlab-sysdata'
+
+    // SonarQube properties
+    sonarServer = 'Sonar'
+
+    // Docker properties
+    registryURL = '******'
+    registryCredential = '******'
+
+  }
+
+  agent any
+  
+  tools {
+    jdk params.jdkVersion
+    maven 'maven-3.8'
+  }
+
+  stages {
+
+    stage('Getting environment') {
+      steps {
+        script {
+          // Normalization
+          gitBranch = gitBranch.replace('origin/', '');
+          echo "Running CI/CD with the following environment"
+          echo "ProjectName: ${projectName}"
+          echo "GitUrl: ${gitUrl}"
+          echo "GitBranch: ${gitBranch}"
+          echo "GitTag: ${gitTag}"
+          git branch: gitBranch, credentialsId: gitlabCredentialsId, url: gitUrl
+        }
+      }
+    }
+
+    stage('Compiling application') {
+      steps {
+        script {
+          echo "Compiling application"
+          sh 'mvn -DskipTests clean package'
+        }
+      }
+    }
+    
+    stage('Test') {
+      steps {
+        echo 'Avvio degli Unit Test in corso...'
+        // Esecuzione dei tests e creazione report
+        sh 'mvn surefire-report:report'
+      }
+      
+      post {
+        always {
+          // Rendo disponibili a JaCoCo i reports generati
+          junit 'target/surefire-reports/*.xml'
+        }
+      }
+    }
+
+    stage('SonarQube analysis') {
+	    steps {
+	      script {
+	        if (gitBranch == "develop") {
+	          try {
+              // requires SonarQube Scanner 2.8+
+              def scannerHome = tool 'SonarQube Scanner';
+              withSonarQubeEnv(sonarServer) {
+                sh "${scannerHome}/bin/sonar-scanner"
+              }
+            } catch (Exception e) {
+              echo "Error during reporting on SonarQube"
+            }
+          } else {
+	          echo "Skipping SonarQube in a non-dev environment"
+	        }
+	   	  }
+	    }
+	  }
+	
+	  stage("Quality Gate") {
+      steps {
+        script {
+          if (gitBranch == "develop") {
+            timeout(time: 1, unit: 'HOURS') {
+              // Mi assicuro che il quality gate sia superato prima di effettuare altre azioni
+              waitForQualityGate abortPipeline: true
+            }
+          } else {
+            echo "Skipping Quality Gate check in a non-dev environment"
+          }
+        }
+      }
+    }
+
+    stage('Building Docker image') {
+      steps {
+        script {
+          if (toKubernetes == true) {
+            echo "Building Docker image"
+            docker.withRegistry(registryURL + projectName, registryCredential) {
+              def baseImage = docker.build(projectName + ":latest");
+              baseImage.push()
+              docker.build(projectName + ":${env.BUILD_NUMBER}").push()
+              if (gitBranch == "master" && gitTag != "") {
+                docker.build(projectName + ":${gitTag}").push()
+              }
+              echo "Docker image pushed"
+            }
+          } else {
+            echo "Kubernetes deploy is disabled, skipping phase"
+          }
+        }
+      }
+    }
+
+    stage('Publishing on Kubernetes') {
+      steps {
+        script {
+          if (toKubernetes == true) {
+            if (gitBranch != "master") {
+              echo "Not master branch, skipping deploy on Kubernetes"
+            } else {
+              echo "Publishing on Kubernetes"
+              sh "config/interpolate.sh"
+              withCredentials([kubeconfigContent(credentialsId: kubernetesCredentials, variable: 'KUBECONFIG_CONTENT')]){
+                sh '''echo "$KUBECONFIG_CONTENT" > kubeconfig'''
+                // Update Kubernetes configuration
+                sh("kubectl --kubeconfig=kubeconfig -f config/deployment.yml")
+              }
+            }
+          } else {
+            echo "Kubernetes deploy is disabled, skipping phase"
+          }
+        }
+      }
+    }
+
+  }
+    
+  post {
+    always {
+      echo 'One way or another, I have finished'
+      deleteDir() /* clean up our workspace */
+    }
+
+    success {
+      sendToMattermost("#a4c639", "Build n.${env.BUILD_NUMBER} of ${env.JOB_NAME} completed")
+    }
+
+    unstable {
+      sendToMattermost("#ffbf00", "Build Unstable!")
+    }
+
+    failure {
+      sendToMattermost("#c0392b", "WARNING -- Build FAILURE!!")
+    }
+
+    changed {
+      sendToMattermost("#ffbf00", "Things were different before...")
+    }
+  }
+
+}
+
+@NonCPS
+def sendToMattermost(String color, String message) {
+  if (toMattermost == true) {
+    mattermostSend(color: color, icon: "https://jenkins.io/images/logos/jenkins/jenkins.png", message: message, channel: $mattermostChannel, endpoint: $mattermostUrlWebHook)
+  } else {
+    echo "Mattermost notification is disabled, skipping communication"
+  }
+}
