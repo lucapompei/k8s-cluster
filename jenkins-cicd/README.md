@@ -23,6 +23,19 @@ Mattermost data
 - mattermostChannel: The Mattermost channel ID in which to send the notification
 - mattermostUrlWebHook: The Mattermost webhook to use to send the notification
 
+Remote GIT data
+- toRemoteGit (default: false): Indicates whether the deployment is directed to another remote GIT repository
+- gitLocalTestBranch: The local git branch to use to know if push on test environment
+- gitRemoteTestBranch: The remote git branch to use to push on remote test environment
+- gitLocalCollBranch: The local git branch to use to know if push on coll environment
+- gitRemoteCollBranch: The remote git branch to use to push on remote coll environment
+- gitLocalProdBranch: The local git branch to use to know if push on prod environment
+- gitRemoteProdBranch: The remote git branch to use to push on remote prod environment
+- gitRemoteCredentials: The git credentials to use to push on remote
+- gitRemoteUrl: The git url to use to push on remote
+- gitConfigEmail: The git email to use to push
+- gitConfigName: The git name to use to push
+
 ## Steps
 
 - Build
@@ -31,6 +44,7 @@ Mattermost data
 - SonarQube quality gate
 - (optional) Publish on Kubernetes
 - (optional) Communicate on Mattesmost
+- (optional) Push to another remote GIT
 
 ## Usage
 
@@ -61,8 +75,10 @@ stages {
                 [$class: 'StringParameterValue', name: 'gitBranch', value: env.GIT_BRANCH],
                 [$class: 'StringParameterValue', name: 'gitTag', value: env.GIT_TAG]
                 // Optional parameters
+                [$class: 'StringParameterValue', name: 'customMavenProfile', value: '-Ptest']
                 // Kubernetes data...
                 // Mattermost data...
+                // Remote GIT data...
             ]
         }
     }

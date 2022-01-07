@@ -22,6 +22,19 @@ pipeline {
     string(name: 'mattermostChannel', description: 'The Mattermost channel ID in which to send the notification')
     string(name: 'mattermostUrlWebHook', description: 'The Mattermost webhook to use to send the notification')
 
+    // Second remote data
+    booleanParam(name: 'toRemoteGit', defaultValue: false, description: 'Indicates whether the deployment is directed to a remote git')
+    string(name: 'gitLocalTestBranch', description: 'The local git branch to use to know if push on test environment')
+    string(name: 'gitRemoteTestBranch', description: 'The remote git branch to use to push on remote test environment')
+    string(name: 'gitLocalCollBranch', description: 'The local git branch to use to know if push on coll environment')
+    string(name: 'gitRemoteCollBranch', description: 'The remote git branch to use to push on remote coll environment')
+    string(name: 'gitLocalProdBranch', description: 'The local git branch to use to know if push on prod environment')
+    string(name: 'gitRemoteProdBranch', description: 'The remote git branch to use to push on remote prod environment')
+    string(name: 'gitRemoteCredentials', description: 'The git credentials to use to push on remote')
+    string(name: 'gitRemoteUrl', description: 'The git url to use to push on remote')
+    string(name: 'gitConfigEmail', description: 'The git email to use to push')
+    string(name: 'gitConfigName', description: 'The git name to use to push')
+
   }
 
   environment {
@@ -57,6 +70,11 @@ pipeline {
           echo "GitUrl: ${gitUrl}"
           echo "GitBranch: ${gitBranch}"
           echo "GitTag: ${gitTag}"
+          echo "Custom maven profile for build: ${customMavenProfile}"
+          echo "Deploy to: "
+          echo "Kubernetes: ${toKubernetes}"
+          echo "Mattermost: ${toMattermost}"
+          echo "Remote git: ${toRemoteGit}"
           git branch: gitBranch, credentialsId: gitlabCredentialsId, url: gitUrl
         }
       }
@@ -66,7 +84,7 @@ pipeline {
       steps {
         script {
           echo "Compiling application"
-          sh 'mvn -DskipTests clean package'
+          sh "mvn -DskipTests clean package ${customMavenProfile}"
         }
       }
     }
@@ -159,6 +177,36 @@ pipeline {
             }
           } else {
             echo "Kubernetes deploy is disabled, skipping phase"
+          }
+        }
+      }
+    }
+
+    stage('Publishing on remote Git') {
+      steps {
+        script {
+          if (toRemoteGit == true) {
+            def branchToPush;
+            if (gitBranch == gitLocalTestBranch) {
+              branchToPush = gitRemoteTestBranch
+            } else if (gitBranch == gitLocalCollBranch) {
+              branchToPush = gitRemoteCollBranch
+            } else if (gitBranch == gitLocalProdBranch) {
+              branchToPush = gitRemoteProdBranch
+            }
+            if (branchToPush != null) {
+              echo "Pushing on Git remote to ${branchToPush}"
+              withCredentials([usernamePassword(credentialsId: gitRemoteCredentials, passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                sh "git config user.email ${gitConfigEmail}"
+                sh "git config user.name ${gitConfigName}"
+                sh "git checkout ${gitBranch}"
+                sh "git -c http.sslVerify=false push https://${GIT_USERNAME}:${GIT_PASSWORD}@${gitRemoteUrl} ${gitBranch}:${branchToPush}"
+              }
+            } else {
+              echo "Skipping push to remote Git due to a not recognized branch: ${gitBranch}"
+            }
+          } else {
+            echo "Push to remote Git is disabled, skipping phase"
           }
         }
       }
