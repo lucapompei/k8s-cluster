@@ -9,9 +9,13 @@ Base data
 - gitUrl: The project git url
 - gitBranch: The project git branch to use to run CI/CD
 - gitTag: The project git tag to use to run CI/CD
+- gitTestBranch (default 'develop'): The local git branch to use to know if push on test environment
+- gitCollBranch (default 'release'): The local git branch to use to know if push on coll environment
+- gitProdBranch (default 'master'): The local git branch to use to know if push on prod environment
 
 Build data
 - jdkVersion (default: OpenJDK-11): The JDK to use to build the project
+- customMavenProfile: A custom maven profile to use for building phase
 
 Kubernetes data
 - toKubernetes (default: false): Indicates whether the deployment is directed to Kubernetes
@@ -25,16 +29,13 @@ Mattermost data
 
 Remote GIT data
 - toRemoteGit (default: false): Indicates whether the deployment is directed to another remote GIT repository
-- gitLocalTestBranch: The local git branch to use to know if push on test environment
-- gitRemoteTestBranch: The remote git branch to use to push on remote test environment
-- gitLocalCollBranch: The local git branch to use to know if push on coll environment
-- gitRemoteCollBranch: The remote git branch to use to push on remote coll environment
-- gitLocalProdBranch: The local git branch to use to know if push on prod environment
-- gitRemoteProdBranch: The remote git branch to use to push on remote prod environment
+- gitRemoteTestBranch (default 'develop'): The remote git branch to use to push on remote test environment
+- gitRemoteCollBranch (default 'release'): The remote git branch to use to push on remote coll environment
+- gitRemoteProdBranch (default 'master'): The remote git branch to use to push on remote prod environment
 - gitRemoteCredentials: The git credentials to use to push on remote
 - gitRemoteUrl: The git url to use to push on remote
-- gitConfigEmail: The git email to use to push
-- gitConfigName: The git name to use to push
+- gitRemoteConfigEmail: The git email to use to push on remote
+- gitRemoteConfigName: The git name to use to push on remote
 
 ## Steps
 
@@ -73,8 +74,9 @@ stages {
                 [$class: 'StringParameterValue', name: 'projectName', value: 'MyProjectName'],
                 [$class: 'StringParameterValue', name: 'gitUrl', value: env.GIT_URL],
                 [$class: 'StringParameterValue', name: 'gitBranch', value: env.GIT_BRANCH],
-                [$class: 'StringParameterValue', name: 'gitTag', value: env.GIT_TAG]
+                [$class: 'StringParameterValue', name: 'gitTag', value: env.GIT_TAG],
                 // Optional parameters
+                [$class: 'StringParameterValue', name: 'jdkVersion', value: 'OpenJDK-11'],
                 [$class: 'StringParameterValue', name: 'customMavenProfile', value: '-Ptest']
                 // Kubernetes data...
                 // Mattermost data...

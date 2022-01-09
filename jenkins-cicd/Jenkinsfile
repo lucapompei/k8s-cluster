@@ -7,10 +7,14 @@ pipeline {
     string(name: 'projectName', description: 'The project name')
     string(name: 'gitUrl', description: 'The project git url')
     string(name: 'gitBranch', description: 'The project git branch to use to run CI/CD')
-    string(name: 'gitTag', description: 'The project git tag to use to run CI/CD')
-
+    string(name: 'gitTag', defaultValue: '', description: 'The project git tag to use to run CI/CD')
+    string(name: 'gitTestBranch', defaultValue: 'develop', description: 'The git branch to use to know if push on test environment')
+    string(name: 'gitCollBranch', defaultValue: 'release', description: 'The git branch to use to know if push on coll environment')
+    string(name: 'gitProdBranch', defaultValue: 'master', description: 'The git branch to use to know if push on prod environment')
+    
     // Build data
     string(name: 'jdkVersion', defaultValue: 'OpenJDK-11', description: 'The JDK to use to build the project')
+    string(name: 'customMavenProfile', defaultValue: '', description: 'A custom maven profile to use for building phase')
 
     // Kubernetes data
     booleanParam(name: 'toKubernetes', defaultValue: false, description: 'Indicates whether the deployment is directed to Kubernetes')
@@ -24,16 +28,13 @@ pipeline {
 
     // Second remote data
     booleanParam(name: 'toRemoteGit', defaultValue: false, description: 'Indicates whether the deployment is directed to a remote git')
-    string(name: 'gitLocalTestBranch', description: 'The local git branch to use to know if push on test environment')
-    string(name: 'gitRemoteTestBranch', description: 'The remote git branch to use to push on remote test environment')
-    string(name: 'gitLocalCollBranch', description: 'The local git branch to use to know if push on coll environment')
-    string(name: 'gitRemoteCollBranch', description: 'The remote git branch to use to push on remote coll environment')
-    string(name: 'gitLocalProdBranch', description: 'The local git branch to use to know if push on prod environment')
-    string(name: 'gitRemoteProdBranch', description: 'The remote git branch to use to push on remote prod environment')
+    string(name: 'gitRemoteTestBranch', defaultValue: 'develop', description: 'The remote git branch to use to push on remote test environment')
+    string(name: 'gitRemoteCollBranch', defaultValue: 'release', description: 'The remote git branch to use to push on remote coll environment')
+    string(name: 'gitRemoteProdBranch', defaultValue: 'master', description: 'The remote git branch to use to push on remote prod environment')
     string(name: 'gitRemoteCredentials', description: 'The git credentials to use to push on remote')
     string(name: 'gitRemoteUrl', description: 'The git url to use to push on remote')
-    string(name: 'gitConfigEmail', description: 'The git email to use to push')
-    string(name: 'gitConfigName', description: 'The git name to use to push')
+    string(name: 'gitRemoteConfigEmail', description: 'The git email to use to push on remote')
+    string(name: 'gitRemoteConfigName', description: 'The git name to use to push on remote')
 
   }
 
@@ -63,19 +64,17 @@ pipeline {
     stage('Getting environment') {
       steps {
         script {
-          // Normalization
-          gitBranch = gitBranch.replace('origin/', '');
+          env.NORMALIZED_GIT_BRANCH = gitBranch.replace('origin/', '');
           echo "Running CI/CD with the following environment"
           echo "ProjectName: ${projectName}"
           echo "GitUrl: ${gitUrl}"
-          echo "GitBranch: ${gitBranch}"
+          echo "GitBranch: ${env.NORMALIZED_GIT_BRANCH}"
           echo "GitTag: ${gitTag}"
           echo "Custom maven profile for build: ${customMavenProfile}"
-          echo "Deploy to: "
-          echo "Kubernetes: ${toKubernetes}"
-          echo "Mattermost: ${toMattermost}"
-          echo "Remote git: ${toRemoteGit}"
-          git branch: gitBranch, credentialsId: gitlabCredentialsId, url: gitUrl
+          echo "Deploy to Kubernetes: ${toKubernetes}"
+          echo "Post to Mattermost: ${toMattermost}"
+          echo "Push to remote git: ${toRemoteGit}"
+          git branch: env.NORMALIZED_GIT_BRANCH, credentialsId: gitlabCredentialsId, url: gitUrl
         }
       }
     }
@@ -91,14 +90,13 @@ pipeline {
     
     stage('Test') {
       steps {
-        echo 'Avvio degli Unit Test in corso...'
-        // Esecuzione dei tests e creazione report
+        echo 'Executing tests and creating reports for Jacoco'
         sh 'mvn surefire-report:report'
       }
       
       post {
         always {
-          // Rendo disponibili a JaCoCo i reports generati
+          // Make reports available for Jacoco
           junit 'target/surefire-reports/*.xml'
         }
       }
@@ -107,9 +105,10 @@ pipeline {
     stage('SonarQube analysis') {
 	    steps {
 	      script {
-	        if (gitBranch == "develop") {
+          // Other environments are dev sub-set, there is no need to perform another scan
+	        if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
 	          try {
-              // requires SonarQube Scanner 2.8+
+              // It requires SonarQube Scanner 2.8+
               def scannerHome = tool 'SonarQube Scanner';
               withSonarQubeEnv(sonarServer) {
                 sh "${scannerHome}/bin/sonar-scanner"
@@ -127,9 +126,10 @@ pipeline {
 	  stage("Quality Gate") {
       steps {
         script {
-          if (gitBranch == "develop") {
+          // Other environments are dev sub-set, there is no need to perform another scan
+          if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
             timeout(time: 1, unit: 'HOURS') {
-              // Mi assicuro che il quality gate sia superato prima di effettuare altre azioni
+              // Waiting for quality gate response before going on
               waitForQualityGate abortPipeline: true
             }
           } else {
@@ -142,13 +142,13 @@ pipeline {
     stage('Building Docker image') {
       steps {
         script {
-          if (toKubernetes == true) {
+          if (toKubernetes.toString() == "true") {
             echo "Building Docker image"
             docker.withRegistry(registryURL + projectName, registryCredential) {
               def baseImage = docker.build(projectName + ":latest");
               baseImage.push()
               docker.build(projectName + ":${env.BUILD_NUMBER}").push()
-              if (gitBranch == "master" && gitTag != "") {
+              if (gitTag != null && gitTag != "") {
                 docker.build(projectName + ":${gitTag}").push()
               }
               echo "Docker image pushed"
@@ -163,8 +163,9 @@ pipeline {
     stage('Publishing on Kubernetes') {
       steps {
         script {
-          if (toKubernetes == true) {
-            if (gitBranch != "master") {
+          if (toKubernetes.toString() == "true") {
+            // TODO: to handle other environments
+            if (!gitBranch.contains(gitProdBranch)) {
               echo "Not master branch, skipping deploy on Kubernetes"
             } else {
               echo "Publishing on Kubernetes"
@@ -185,25 +186,25 @@ pipeline {
     stage('Publishing on remote Git') {
       steps {
         script {
-          if (toRemoteGit == true) {
+          if (toRemoteGit.toString() == "true") {
             def branchToPush;
-            if (gitBranch == gitLocalTestBranch) {
-              branchToPush = gitRemoteTestBranch
-            } else if (gitBranch == gitLocalCollBranch) {
-              branchToPush = gitRemoteCollBranch
-            } else if (gitBranch == gitLocalProdBranch) {
-              branchToPush = gitRemoteProdBranch
+            if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
+              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitTestBranch, gitRemoteTestBranch)
+            } else if (env.NORMALIZED_GIT_BRANCH.contains(gitCollBranch)) {
+              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitCollBranch, gitRemoteCollBranch)
+            } else if (env.NORMALIZED_GIT_BRANCH.contains(gitProdBranch)) {
+              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitProdBranch, gitRemoteProdBranch)
             }
             if (branchToPush != null) {
-              echo "Pushing on Git remote to ${branchToPush}"
+              echo "Pushing on remote Git to ${branchToPush}"
               withCredentials([usernamePassword(credentialsId: gitRemoteCredentials, passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                sh "git config user.email ${gitConfigEmail}"
-                sh "git config user.name ${gitConfigName}"
-                sh "git checkout ${gitBranch}"
-                sh "git -c http.sslVerify=false push https://${GIT_USERNAME}:${GIT_PASSWORD}@${gitRemoteUrl} ${gitBranch}:${branchToPush}"
+                sh "git config user.email ${gitRemoteConfigEmail}"
+                sh "git config user.name ${gitRemoteConfigName}"
+                sh "git checkout ${env.NORMALIZED_GIT_BRANCH}"
+                sh "git -c http.sslVerify=false push https://${GIT_USERNAME}:${GIT_PASSWORD}@${gitRemoteUrl} ${env.NORMALIZED_GIT_BRANCH}:${branchToPush}"
               }
             } else {
-              echo "Skipping push to remote Git due to a not recognized branch: ${gitBranch}"
+              echo "Skipping push to remote Git due to a not recognized branch: ${env.NORMALIZED_GIT_BRANCH}"
             }
           } else {
             echo "Push to remote Git is disabled, skipping phase"
@@ -241,7 +242,7 @@ pipeline {
 
 @NonCPS
 def sendToMattermost(String color, String message) {
-  if (toMattermost == true) {
+  if (toMattermost.toString() == "true") {
     mattermostSend(color: color, icon: "https://jenkins.io/images/logos/jenkins/jenkins.png", message: message, channel: $mattermostChannel, endpoint: $mattermostUrlWebHook)
   } else {
     echo "Mattermost notification is disabled, skipping communication"
