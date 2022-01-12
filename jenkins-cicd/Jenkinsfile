@@ -74,6 +74,9 @@ pipeline {
           echo "Deploy to Kubernetes: ${toKubernetes}"
           echo "Post to Mattermost: ${toMattermost}"
           echo "Push to remote git: ${toRemoteGit}"
+          if (env.NORMALIZED_GIT_BRANCH.contains(gitProdBranch) && (gitTag == null || gitTag == "")) {
+              throw new Exception("To deploy in production a git tag is necessary")
+          }
           git branch: env.NORMALIZED_GIT_BRANCH, credentialsId: gitlabCredentialsId, url: gitUrl
         }
       }
