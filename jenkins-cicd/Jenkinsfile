@@ -8,18 +8,20 @@ pipeline {
     string(name: 'gitUrl', description: 'The project git url')
     string(name: 'gitBranch', description: 'The project git branch to use to run CI/CD')
     string(name: 'gitTag', defaultValue: '', description: 'The project git tag to use to run CI/CD')
-    string(name: 'gitTestBranch', defaultValue: 'develop', description: 'The git branch to use to know if push on test environment')
-    string(name: 'gitCollBranch', defaultValue: 'release', description: 'The git branch to use to know if push on coll environment')
-    string(name: 'gitProdBranch', defaultValue: 'master', description: 'The git branch to use to know if push on prod environment')
+    string(name: 'gitProductionBranch', defaultValue: 'master', 
+      description: 'The branch used for production release, for which the git tag became mandatory')
     
     // Build data
     string(name: 'jdkVersion', defaultValue: 'OpenJDK-11', description: 'The JDK to use to build the project')
-    string(name: 'customMavenProfile', defaultValue: '', description: 'A custom maven profile to use for building phase')
+    string(name: 'customMavenCommand', defaultValue: '', description: 'A custom maven command to use for building phase')
+    string(name: 'sonarAllowedBranches', defaultValue: 'develop', description: 'The comma-separated list of branches for which use Sonar')
 
     // Kubernetes data
     booleanParam(name: 'toKubernetes', defaultValue: false, description: 'Indicates whether the deployment is directed to Kubernetes')
     string(name: 'kubernetesCredentials', description: 'The Kubernetes credentials ID stored in Jenkins')
     string(name: 'kubernetesCluster', description: 'The Kubernetes cluster name in which to deploy')
+    string(name: 'kubernetesBranchMapping', defaultValue: 'master', 
+      description: 'The list of allowed branches for which deploy on Kubernetes')
 
     // Mattermost data
     booleanParam(name: 'toMattermost', defaultValue: false, description: 'Indicates whether the deployment is directed to Kubernetes')
@@ -28,13 +30,11 @@ pipeline {
 
     // Second remote data
     booleanParam(name: 'toRemoteGit', defaultValue: false, description: 'Indicates whether the deployment is directed to a remote git')
-    string(name: 'gitRemoteTestBranch', defaultValue: 'develop', description: 'The remote git branch to use to push on remote test environment')
-    string(name: 'gitRemoteCollBranch', defaultValue: 'release', description: 'The remote git branch to use to push on remote coll environment')
-    string(name: 'gitRemoteProdBranch', defaultValue: 'master', description: 'The remote git branch to use to push on remote prod environment')
-    string(name: 'gitRemoteCredentials', description: 'The git credentials to use to push on remote')
-    string(name: 'gitRemoteUrl', description: 'The git url to use to push on remote')
+    string(name: 'gitRemotes', description: 'The (semicolon separated) list of, comma separated values, remote urls and credentials')
     string(name: 'gitRemoteConfigEmail', description: 'The git email to use to push on remote')
     string(name: 'gitRemoteConfigName', description: 'The git name to use to push on remote')
+    string(name: 'gitRemoteBranchMapping', defaultValue: 'develop:develop,release:release,master:master,hotfix:hotfix', 
+      description: 'The map of allowed branches for which push on remote branch')
 
   }
 
@@ -70,11 +70,11 @@ pipeline {
           echo "GitUrl: ${gitUrl}"
           echo "GitBranch: ${env.NORMALIZED_GIT_BRANCH}"
           echo "GitTag: ${gitTag}"
-          echo "Custom maven profile for build: ${customMavenProfile}"
+          echo "Custom maven command for build: ${customMavenCommand}"
           echo "Deploy to Kubernetes: ${toKubernetes}"
           echo "Post to Mattermost: ${toMattermost}"
           echo "Push to remote git: ${toRemoteGit}"
-          if (env.NORMALIZED_GIT_BRANCH.contains(gitProdBranch) && (gitTag == null || gitTag == "")) {
+          if (env.NORMALIZED_GIT_BRANCH.contains(gitProductionBranch) && (gitTag == null || gitTag == "")) {
               throw new Exception("To deploy in production a git tag is necessary")
           }
           git branch: env.NORMALIZED_GIT_BRANCH, credentialsId: gitlabCredentialsId, url: gitUrl
@@ -86,7 +86,7 @@ pipeline {
       steps {
         script {
           echo "Compiling application"
-          sh "mvn -DskipTests clean package ${customMavenProfile}"
+          sh "mvn -DskipTests clean package ${customMavenCommand}"
         }
       }
     }
@@ -106,111 +106,109 @@ pipeline {
     }
 
     stage('SonarQube analysis') {
-	    steps {
+      when {
+        expression {
+          return isSonarAllowed().toString() == "true"
+        }
+      }
+      steps {
 	      script {
-          // Other environments are dev sub-set, there is no need to perform another scan
-	        if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
-	          try {
-              // It requires SonarQube Scanner 2.8+
-              def scannerHome = tool 'SonarQube Scanner';
-              withSonarQubeEnv(sonarServer) {
-                sh "${scannerHome}/bin/sonar-scanner"
-              }
-            } catch (Exception e) {
-              echo "Error during reporting on SonarQube"
+          try {
+            // It requires SonarQube Scanner 2.8+
+            def scannerHome = tool 'SonarQube Scanner';
+            withSonarQubeEnv(sonarServer) {
+              sh "${scannerHome}/bin/sonar-scanner"
             }
-          } else {
-	          echo "Skipping SonarQube in a non-dev environment"
-	        }
+          } catch (Exception e) {
+            echo "Error during reporting on SonarQube"
+          }
 	   	  }
 	    }
 	  }
 	
 	  stage("Quality Gate") {
+      when {
+        expression {
+          return isSonarAllowed().toString() == "true"
+        }
+      }
       steps {
         script {
-          // Other environments are dev sub-set, there is no need to perform another scan
-          if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
-            timeout(time: 1, unit: 'HOURS') {
-              // Waiting for quality gate response before going on
-              waitForQualityGate abortPipeline: true
-            }
-          } else {
-            echo "Skipping Quality Gate check in a non-dev environment"
+          timeout(time: 1, unit: 'HOURS') {
+            // Waiting for quality gate response before going on
+            waitForQualityGate abortPipeline: true
           }
         }
       }
     }
 
     stage('Building Docker image') {
+      when {
+        expression {
+          return toKubernetes.toString() == "true" && isBranchKubernetesAllowed().toString() == "true"
+        }
+      }
       steps {
         script {
-          if (toKubernetes.toString() == "true") {
-            echo "Building Docker image"
-            docker.withRegistry(registryURL + projectName, registryCredential) {
-              def baseImage = docker.build(projectName + ":latest");
-              baseImage.push()
-              docker.build(projectName + ":${env.BUILD_NUMBER}").push()
-              if (gitTag != null && gitTag != "") {
-                docker.build(projectName + ":${gitTag}").push()
-              }
-              echo "Docker image pushed"
+          echo "Building Docker image"
+          docker.withRegistry(registryURL + projectName, registryCredential) {
+            def baseImage = docker.build(projectName + ":latest");
+            baseImage.push()
+            docker.build(projectName + ":${env.BUILD_NUMBER}").push()
+            if (gitTag != null && gitTag != "") {
+              docker.build(projectName + ":${gitTag}").push()
             }
-          } else {
-            echo "Kubernetes deploy is disabled, skipping phase"
+            echo "Docker image pushed"
           }
         }
       }
     }
 
     stage('Publishing on Kubernetes') {
+      when {
+        expression {
+          return toKubernetes.toString() == "true" && isBranchKubernetesAllowed().toString() == "true"
+        }
+      }
       steps {
         script {
-          if (toKubernetes.toString() == "true") {
-            // TODO: to handle other environments
-            if (!gitBranch.contains(gitProdBranch)) {
-              echo "Not master branch, skipping deploy on Kubernetes"
-            } else {
-              echo "Publishing on Kubernetes"
-              sh "config/interpolate.sh"
-              withCredentials([kubeconfigContent(credentialsId: kubernetesCredentials, variable: 'KUBECONFIG_CONTENT')]){
-                sh '''echo "$KUBECONFIG_CONTENT" > kubeconfig'''
-                // Update Kubernetes configuration
-                sh("kubectl --kubeconfig=kubeconfig -f config/deployment.yml")
-              }
-            }
-          } else {
-            echo "Kubernetes deploy is disabled, skipping phase"
+          // TODO: to handle other environments, maybe extending the kubernetesBranchMapping property
+          echo "Publishing on Kubernetes"
+          sh "config/interpolate.sh"
+          withCredentials([kubeconfigContent(credentialsId: kubernetesCredentials, variable: 'KUBECONFIG_CONTENT')]){
+            sh '''echo "$KUBECONFIG_CONTENT" > kubeconfig'''
+            // Update Kubernetes configuration
+            sh("kubectl --kubeconfig=kubeconfig -f config/deployment.yml")
           }
         }
       }
     }
 
     stage('Publishing on remote Git') {
+      when {
+        expression {
+          return toRemoteGit.toString() == "true"
+        }
+      }
       steps {
         script {
-          if (toRemoteGit.toString() == "true") {
-            def branchToPush;
-            if (env.NORMALIZED_GIT_BRANCH.contains(gitTestBranch)) {
-              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitTestBranch, gitRemoteTestBranch)
-            } else if (env.NORMALIZED_GIT_BRANCH.contains(gitCollBranch)) {
-              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitCollBranch, gitRemoteCollBranch)
-            } else if (env.NORMALIZED_GIT_BRANCH.contains(gitProdBranch)) {
-              branchToPush = env.NORMALIZED_GIT_BRANCH.replace(gitProdBranch, gitRemoteProdBranch)
-            }
-            if (branchToPush != null) {
-              echo "Pushing on remote Git to ${branchToPush}"
-              withCredentials([usernamePassword(credentialsId: gitRemoteCredentials, passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+          def branchToPush = getGitRemoteMappedBranch();
+          if (branchToPush != null) {
+            echo "Pushing on remote Git to ${branchToPush} with git remotes: ${gitRemotes}"
+            def remotes = gitRemotes.split(';')
+            for (String remote : remotes) {
+              def mapping = remote.split(',')
+              def remoteGitCredentials = mapping[0]
+              def remoteGitUrl = mapping[1]
+              withCredentials([usernamePassword(credentialsId: remoteGitCredentials, passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
                 sh "git config user.email ${gitRemoteConfigEmail}"
                 sh "git config user.name ${gitRemoteConfigName}"
                 sh "git checkout ${env.NORMALIZED_GIT_BRANCH}"
-                sh "git -c http.sslVerify=false push https://${GIT_USERNAME}:${GIT_PASSWORD}@${gitRemoteUrl} ${env.NORMALIZED_GIT_BRANCH}:${branchToPush}"
+                sh "git -c http.sslVerify=false push --set-upstream https://${GIT_USERNAME}:${GIT_PASSWORD}@${remoteGitUrl} ${env.NORMALIZED_GIT_BRANCH}:${branchToPush}"
               }
-            } else {
-              echo "Skipping push to remote Git due to a not recognized branch: ${env.NORMALIZED_GIT_BRANCH}"
             }
           } else {
-            echo "Push to remote Git is disabled, skipping phase"
+            echo "Skipping push to remote Git due to a not recognized branch: ${env.NORMALIZED_GIT_BRANCH}"
           }
         }
       }
@@ -221,7 +219,7 @@ pipeline {
   post {
     always {
       echo 'One way or another, I have finished'
-      deleteDir() /* clean up our workspace */
+      deleteDir() /* Clean up workspace */
     }
 
     success {
@@ -243,11 +241,55 @@ pipeline {
 
 }
 
-@NonCPS
 def sendToMattermost(String color, String message) {
   if (toMattermost.toString() == "true") {
-    mattermostSend(color: color, icon: "https://jenkins.io/images/logos/jenkins/jenkins.png", message: message, channel: $mattermostChannel, endpoint: $mattermostUrlWebHook)
+    mattermostSend(color: color, icon: "https://jenkins.io/images/logos/jenkins/jenkins.png", message: message, channel: mattermostChannel, endpoint: mattermostUrlWebHook)
   } else {
     echo "Mattermost notification is disabled, skipping communication"
   }
+}
+
+@NonCPS
+def isSonarAllowed() {
+  def mappings = sonarAllowedBranches.split(',')
+  for (String mapping : mappings) {
+    // If the current branch matches with the expected and allowed branch
+    if (env.NORMALIZED_GIT_BRANCH.contains(mapping)) {
+      return true;
+    }
+  }
+  echo "Sonar analysis not allowed for branch ${env.NORMALIZED_GIT_BRANCH}"
+  return false;
+}
+
+@NonCPS
+def isBranchKubernetesAllowed() {
+  def mappings = kubernetesBranchMapping.split(',')
+  for (String mapping : mappings) {
+    // If the current branch matches with the expected and allowed branch
+    if (env.NORMALIZED_GIT_BRANCH.contains(mapping)) {
+      return true;
+    }
+  }
+  echo "Kubernetes deploy not allowed for branch ${env.NORMALIZED_GIT_BRANCH}"
+  return false;
+}
+
+// Example: with the mapping 'release:staging' 
+// the release/1.0.0 branch will became staging/1.0.0
+// No content will be returned if the are no matches
+def getGitRemoteMappedBranch() {
+  def maps = gitRemoteBranchMapping.split(',')
+  for (String map : maps) {
+    def mapping = map.split(':')
+    def localBranch = mapping[0]
+    def remoteBranch = mapping[0]
+    echo "Checking ${localBranch} with ${env.NORMALIZED_GIT_BRANCH}; current replace: ${remoteBranch}"
+    // If the current branch matches with the expected local branch
+    if (env.NORMALIZED_GIT_BRANCH.contains(localBranch)) {
+      return env.NORMALIZED_GIT_BRANCH.replace(localBranch, remoteBranch);
+    }
+  }
+  echo "Pushing on remote Git not allowed for branch ${env.NORMALIZED_GIT_BRANCH}"
+  return null;
 }

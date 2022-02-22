@@ -9,18 +9,18 @@ Base data
 - gitUrl: The project git url
 - gitBranch: The project git branch to use to run CI/CD
 - gitTag: The project git tag to use to run CI/CD
-- gitTestBranch (default 'develop'): The local git branch to use to know if push on test environment
-- gitCollBranch (default 'release'): The local git branch to use to know if push on coll environment
-- gitProdBranch (default 'master'): The local git branch to use to know if push on prod environment
+- gitProductionBranch (default: master): The branch used for production release, for which the git tag became mandatory
 
 Build data
 - jdkVersion (default: OpenJDK-11): The JDK to use to build the project
-- customMavenProfile: A custom maven profile to use for building phase
+- customMavenCommand: A custom maven command to use for building phase
+- sonarAllowedBranches (default: develop), description: The comma-separated list of branches for which use Sonar
 
 Kubernetes data
 - toKubernetes (default: false): Indicates whether the deployment is directed to Kubernetes
 - kubernetesCredentials: The Kubernetes credentials ID stored in Jenkins
 - kubernetesCluster: The Kubernetes cluster name in which to deploy
+- kubernetesBranchMapping (default: master): The list of allowed branches for which deploy on Kubernetes
 
 Mattermost data
 - toMattermost (default: false): Indicates whether the deployment is directed to Kubernetes
@@ -29,13 +29,10 @@ Mattermost data
 
 Remote GIT data
 - toRemoteGit (default: false): Indicates whether the deployment is directed to another remote GIT repository
-- gitRemoteTestBranch (default 'develop'): The remote git branch to use to push on remote test environment
-- gitRemoteCollBranch (default 'release'): The remote git branch to use to push on remote coll environment
-- gitRemoteProdBranch (default 'master'): The remote git branch to use to push on remote prod environment
-- gitRemoteCredentials: The git credentials to use to push on remote
-- gitRemoteUrl: The git url to use to push on remote
+- gitRemotes: The (semicolon separated) list of, comma separated values, remote urls and credentials
 - gitRemoteConfigEmail: The git email to use to push on remote
 - gitRemoteConfigName: The git name to use to push on remote
+- gitRemoteBranchMapping (default: develop:develop,release:release,master:master,hotfix:hotfix): The map of allowed branches for which push on remote branch
 
 ## Steps
 
@@ -77,7 +74,7 @@ stages {
                 [$class: 'StringParameterValue', name: 'gitTag', value: env.GIT_TAG],
                 // Optional parameters
                 [$class: 'StringParameterValue', name: 'jdkVersion', value: 'OpenJDK-11'],
-                [$class: 'StringParameterValue', name: 'customMavenProfile', value: '-Ptest']
+                [$class: 'StringParameterValue', name: 'customMavenCommand', value: '-Ptest']
                 // Kubernetes data...
                 // Mattermost data...
                 // Remote GIT data...
