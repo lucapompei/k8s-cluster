@@ -306,7 +306,7 @@ def getGitRemoteMappedBranch() {
 @NonCPS
 def getChangeString() {
   MAX_MSG_LEN = 100
-  def changeString = "\n"
+  def changeString = ""
 
   echo "Gathering SCM changes"
   def changeLogSets = currentBuild.rawBuild.changeSets
@@ -322,7 +322,7 @@ def getChangeString() {
   if (!changeString) {
     changeString += " - No new changes"
   }
-  return changeString
+  return "\n" + changeString
 }
 
 // Use this method as condition to check if
