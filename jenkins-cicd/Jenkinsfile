@@ -112,7 +112,9 @@ pipeline {
         }
       }
       steps {
-	      script {
+	    script {
+          checkAllowedDeploy()
+		  
           try {
             // It requires SonarQube Scanner 2.8+
             def scannerHome = tool 'SonarQube Scanner';
@@ -134,6 +136,8 @@ pipeline {
       }
       steps {
         script {
+          checkAllowedDeploy()
+		  
           timeout(time: 1, unit: 'HOURS') {
             // Waiting for quality gate response before going on
             waitForQualityGate abortPipeline: true
@@ -150,6 +154,8 @@ pipeline {
       }
       steps {
         script {
+          checkAllowedDeploy()
+		  
           echo "Building Docker image"
           docker.withRegistry(registryURL + projectName, registryCredential) {
             def baseImage = docker.build(projectName + ":latest");
@@ -172,6 +178,8 @@ pipeline {
       }
       steps {
         script {
+          checkAllowedDeploy()
+		  
           // TODO: to handle other environments, maybe extending the kubernetesBranchMapping property
           echo "Publishing on Kubernetes"
           sh "config/interpolate.sh"
@@ -192,6 +200,8 @@ pipeline {
       }
       steps {
         script {
+		  checkAllowedDeploy()
+		  
           def branchToPush = getGitRemoteMappedBranch();
           if (branchToPush != null) {
             echo "Pushing on remote Git to ${branchToPush} with git remotes: ${gitRemotes}"
@@ -223,20 +233,18 @@ pipeline {
     }
 
     success {
-      sendToMattermost("#a4c639", "Build n.${env.BUILD_NUMBER} of ${env.JOB_NAME} completed\nChanges:" + getChangeString())
+      sendToMattermost("#a4c639", "Build n.${env.BUILD_NUMBER} of ${env.JOB_NAME} completed\n**Changes**:" + getChangeString())
     }
 
     unstable {
-      sendToMattermost("#ffbf00", "Build Unstable!\nChanges:" + getChangeString())
+      sendToMattermost("#ffbf00", "Build Unstable!\n**Changes**:" + getChangeString())
     }
 
     failure {
-      sendToMattermost("#c0392b", "WARNING -- Build FAILURE!!\nChanges:" + getChangeString())
+      sendToMattermost("#c0392b", "WARNING -- Build FAILURE!!\n**Changes**:" + getChangeString())
     }
 
-    changed {
-      sendToMattermost("#ffbf00", "Things were different before...")
-    }
+    // changed { }
   }
 
 }
@@ -315,4 +323,13 @@ def getChangeString() {
     changeString += " - No new changes"
   }
   return changeString
+}
+
+// Use this method as condition to check if
+// a deploy is allowed due to a pipeline status
+def checkAllowedDeploy() {
+  if (currentBuild.result == "UNSTABLE" || currentBuild.result == "FAILURE") {
+    error()
+  }
+  return true
 }
