@@ -227,11 +227,11 @@ pipeline {
     }
 
     unstable {
-      sendToMattermost("#ffbf00", "Build Unstable!")
+      sendToMattermost("#ffbf00", "Build Unstable!\nChanges:" + getChangeString())
     }
 
     failure {
-      sendToMattermost("#c0392b", "WARNING -- Build FAILURE!!")
+      sendToMattermost("#c0392b", "WARNING -- Build FAILURE!!\nChanges:" + getChangeString())
     }
 
     changed {
