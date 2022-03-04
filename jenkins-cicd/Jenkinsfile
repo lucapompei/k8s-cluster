@@ -291,7 +291,7 @@ def getGitRemoteMappedBranch() {
   for (String map : maps) {
     def mapping = map.split(':')
     def localBranch = mapping[0]
-    def remoteBranch = mapping[0]
+    def remoteBranch = mapping[1]
     echo "Checking ${localBranch} with ${env.NORMALIZED_GIT_BRANCH}; current replace: ${remoteBranch}"
     // If the current branch matches with the expected local branch
     if (env.NORMALIZED_GIT_BRANCH.contains(localBranch)) {
