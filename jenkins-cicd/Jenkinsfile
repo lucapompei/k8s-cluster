@@ -180,7 +180,7 @@ pipeline {
         script {
           checkAllowedDeploy()
 		  
-          // TODO: to handle other environments, maybe extending the kubernetesBranchMapping property
+          env.ENVIRONMENT = env.NORMALIZED_GIT_BRANCH;
           echo "Publishing on Kubernetes"
           sh "config/interpolate.sh"
           withCredentials([kubeconfigContent(credentialsId: kubernetesCredentials, variable: 'KUBECONFIG_CONTENT')]){
