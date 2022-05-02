@@ -33,7 +33,7 @@ function getServiceSwaggerUrl(service) {
     return new Promise((resolve, reject) => {
         const options = {
             'method': 'GET',
-            'url': `http://${service}/v2/api-docs`
+            'url': `http://${service}/v3/api-docs`
         };
         console.log(`Getting Swagger from ${options.url}`);
         request(options, function (error, response) {
