@@ -27,4 +27,4 @@ skaffold run
 
 ## Constraint
 
-All services that want to share their swagger must expose it at http://${service-name}/v2/api-docs.
+All services that want to share their swagger must expose it at http://${service-name}/v3/api-docs.
