@@ -12,6 +12,8 @@ Base data
 
 Build data
 - jdkVersion (default: OpenJDK-11): The JDK to use to build the project
+- mavenBuildAllowed (defaultValue: true): Indicates whether the Maven build is allowed
+- mavenTestsAllowed (defaultValue: true): Indicates whether the Maven tests are allowed
 - customMavenCommand: A custom maven command to use for building phase
 - sonarAllowedBranches (default: develop), description: The comma-separated list of branches for which use Sonar
 
