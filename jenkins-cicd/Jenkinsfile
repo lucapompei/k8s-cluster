@@ -7,13 +7,15 @@ pipeline {
     string(name: 'projectName', description: 'The project name')
     string(name: 'gitUrl', description: 'The project git url')
     string(name: 'gitBranch', description: 'The project git branch to use to run CI/CD')
-    string(name: 'gitTag', defaultValue: '', description: 'The project git tag to use to run CI/CD')
     string(name: 'gitProductionBranch', defaultValue: 'master', 
       description: 'The branch used for production release, for which the git tag became mandatory')
     
     // Build data
     string(name: 'jdkVersion', defaultValue: 'OpenJDK-11', description: 'The JDK to use to build the project')
+    booleanParam(name: 'mavenBuildAllowed', defaultValue: true, description: 'Indicates whether the Maven build is allowed')
+	  booleanParam(name: 'mavenTestsAllowed', defaultValue: true, description: 'Indicates whether the Maven tests are allowed')
     string(name: 'customMavenCommand', defaultValue: '', description: 'A custom maven command to use for building phase')
+    string(name: 'customMavenSettingsId', defaultValue: '9c08e08c-5a68-49a6-93d1-dc985035b399', description: 'A custom maven settings.xml to use for building phase referred with the Jenkins file ID') 
     string(name: 'sonarAllowedBranches', defaultValue: 'develop', description: 'The comma-separated list of branches for which use Sonar')
 
     // Kubernetes data
@@ -69,32 +71,49 @@ pipeline {
           echo "ProjectName: ${projectName}"
           echo "GitUrl: ${gitUrl}"
           echo "GitBranch: ${env.NORMALIZED_GIT_BRANCH}"
-          echo "GitTag: ${gitTag}"
+          git branch: env.NORMALIZED_GIT_BRANCH, credentialsId: gitlabCredentialsId, url: gitUrl
+          env.GIT_TAG = sh(returnStdout: true, script: 'git tag -l --points-at HEAD').trim()
+          echo "Git tag: ${env.GIT_TAG}"
           echo "Custom maven command for build: ${customMavenCommand}"
           echo "Deploy to Kubernetes: ${toKubernetes}"
           echo "Post to Mattermost: ${toMattermost}"
           echo "Push to remote git: ${toRemoteGit}"
-          if (env.NORMALIZED_GIT_BRANCH.contains(gitProductionBranch) && (gitTag == null || gitTag == "")) {
+          if (env.NORMALIZED_GIT_BRANCH.contains(gitProductionBranch) && (env.GIT_TAG == null || env.GIT_TAG == "")) {
               throw new Exception("To deploy in production a git tag is necessary")
           }
-          git branch: env.NORMALIZED_GIT_BRANCH, credentialsId: gitlabCredentialsId, url: gitUrl
         }
       }
     }
 
     stage('Compiling application') {
+      when {
+        expression {
+          return mavenBuildAllowed.toString() == "true"
+        }
+      }
       steps {
         script {
           echo "Compiling application"
-          sh "mvn -DskipTests clean package ${customMavenCommand}"
+          configFileProvider(
+            [configFile(fileId: customMavenSettingsId, variable: 'MAVEN_SETTINGS')]) {
+            sh "mvn -DskipTests clean package -s '${MAVEN_SETTINGS}' ${customMavenCommand}"
+          }
         }
       }
     }
     
     stage('Test') {
+      when {
+        expression {
+          return mavenTestsAllowed.toString() == "true"
+        }
+      }
       steps {
         echo 'Executing tests and creating reports for Jacoco'
-        sh 'mvn surefire-report:report'
+        configFileProvider(
+          [configFile(fileId: customMavenSettingsId, variable: 'MAVEN_SETTINGS')]) {
+          sh "mvn -s '${MAVEN_SETTINGS}' surefire-report:report"
+        }
       }
       
       post {
@@ -155,14 +174,13 @@ pipeline {
       steps {
         script {
           checkAllowedDeploy()
-		  
           echo "Building Docker image"
           docker.withRegistry(registryURL + projectName, registryCredential) {
             def baseImage = docker.build(projectName + ":latest");
             baseImage.push()
             docker.build(projectName + ":${env.BUILD_NUMBER}").push()
-            if (gitTag != null && gitTag != "") {
-              docker.build(projectName + ":${gitTag}").push()
+            if (env.GIT_TAG != null && env.GIT_TAG != "") {
+              docker.build(projectName + ":${env.GIT_TAG}").push()
             }
             echo "Docker image pushed"
           }
@@ -179,7 +197,6 @@ pipeline {
       steps {
         script {
           checkAllowedDeploy()
-		  
           env.ENVIRONMENT = env.NORMALIZED_GIT_BRANCH;
           echo "Publishing on Kubernetes"
           sh "config/interpolate.sh"
@@ -200,8 +217,7 @@ pipeline {
       }
       steps {
         script {
-		  checkAllowedDeploy()
-		  
+		      checkAllowedDeploy()
           def branchToPush = getGitRemoteMappedBranch();
           if (branchToPush != null) {
             echo "Pushing on remote Git to ${branchToPush} with git remotes: ${gitRemotes}"
