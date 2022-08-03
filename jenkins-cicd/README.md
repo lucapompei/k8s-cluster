@@ -35,6 +35,12 @@ Remote GIT data
 - gitRemoteConfigName: The git name to use to push on remote
 - gitRemoteBranchMapping (default: develop:develop,release:release,master:master,hotfix:hotfix): The map of allowed branches for which push on remote branch
 
+VM data
+- toVM (defaultValue: false): Indicates whether the deployment is directed to VM
+- vmCredentials: The credentials to use to login into the VM
+- vmCommands: The (semicolon separated) command to execute into the VM
+- vmAllowedBranch (default: master) : The list of allowed branches for which push on VM
+
 ## Steps
 
 - Build
@@ -44,6 +50,7 @@ Remote GIT data
 - (optional) Publish on Kubernetes
 - (optional) Communicate on Mattesmost
 - (optional) Push to another remote GIT
+- (optional) Push to VM
 
 ## Usage
 
@@ -76,6 +83,7 @@ stages {
                 // Kubernetes data...
                 // Mattermost data...
                 // Remote GIT data...
+				// VM data...
             ]
         }
     }

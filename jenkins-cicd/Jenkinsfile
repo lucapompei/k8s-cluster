@@ -37,6 +37,13 @@ pipeline {
     string(name: 'gitRemoteConfigName', description: 'The git name to use to push on remote')
     string(name: 'gitRemoteBranchMapping', defaultValue: 'develop:develop,release:release,master:master,hotfix:hotfix', 
       description: 'The map of allowed branches for which push on remote branch')
+	  
+	// VM data
+	booleanParam(name: 'toVM', defaultValue: false, description: 'Indicates whether the deployment is directed to VM')
+    string(name: 'vmCredentials', description: 'The credentials to use to login into the VM')
+    string(name: 'vmCommands', description: 'The (semicolon separated) command to execute into the VM')
+	string(name: 'vmAllowedBranch', defaultValue: 'master', 
+      description: 'The list of allowed branches for which push on VM')
 
   }
 
@@ -78,6 +85,7 @@ pipeline {
           echo "Deploy to Kubernetes: ${toKubernetes}"
           echo "Post to Mattermost: ${toMattermost}"
           echo "Push to remote git: ${toRemoteGit}"
+		  echo "Push to VM: ${toVM}"
           if (env.NORMALIZED_GIT_BRANCH.contains(gitProductionBranch) && (env.GIT_TAG == null || env.GIT_TAG == "")) {
               throw new Exception("To deploy in production a git tag is necessary")
           }
@@ -217,7 +225,7 @@ pipeline {
       }
       steps {
         script {
-		      checkAllowedDeploy()
+		  checkAllowedDeploy()
           def branchToPush = getGitRemoteMappedBranch();
           if (branchToPush != null) {
             echo "Pushing on remote Git to ${branchToPush} with git remotes: ${gitRemotes}"
@@ -236,6 +244,25 @@ pipeline {
           } else {
             echo "Skipping push to remote Git due to a not recognized branch: ${env.NORMALIZED_GIT_BRANCH}"
           }
+        }
+      }
+    }
+	
+	stage('Publishing on VM') {
+      when {
+        expression {
+          return toVM.toString() == "true" && isVMAllowed().toString() == "true"
+        }
+      }
+      steps {
+        script {
+		  checkAllowedDeploy()
+		  sshagent([vmCredentials]) {
+			def commands = vmCommands.split(';')
+            for (String command : commands) {
+			  sh command
+			}
+		  }
         }
       }
     }
@@ -298,6 +325,20 @@ def isBranchKubernetesAllowed() {
   echo "Kubernetes deploy not allowed for branch ${env.NORMALIZED_GIT_BRANCH}"
   return false;
 }
+
+@NonCPS
+def isVMAllowed() {
+  def mappings = vmAllowedBranch.split(',')
+  for (String mapping : mappings) {
+    // If the current branch matches with the expected and allowed branch
+    if (env.NORMALIZED_GIT_BRANCH.contains(mapping)) {
+      return true;
+    }
+  }
+  echo "Push to VM not allowed for branch ${env.NORMALIZED_GIT_BRANCH}"
+  return false;
+}
+
 
 // Example: with the mapping 'release:staging' 
 // the release/1.0.0 branch will became staging/1.0.0
